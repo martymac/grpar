@@ -1,0 +1,17 @@
+Grpar - README
+
+Description :
+*************
+
+Grpar is a tool to extract Build engine group (.grp) files.
+
+See Ken Silverman's Build engine page (http://advsys.net/ken/build.htm) for
+more information.
+
+Author / Licence :
+******************
+
+Grpar has been written by Ganaël LAPLANCHE <ganael.laplanche@martymac.org>
+and is available under the BSD license (see COPYING for details).
+
+The latest version is available on http://contribs.martymac.org
