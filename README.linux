@@ -1,0 +1,9 @@
+Build dependencies:
+Ubuntu/Debian - freebsd-glue libbsd-dev
+
+Building with (g)make:
+make -f Makefile.linux
+
+Building with a BSD make command (bmake, pmake, fmake):
+CFLAGS="-I/usr/include/freebsd -fno-strict-aliasing" LIBS="-lbsd" bmake
+
