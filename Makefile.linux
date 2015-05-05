@@ -1,0 +1,18 @@
+CC     := gcc
+CCLD   := gcc
+CFLAGS += -O2 -Wall -fno-strict-aliasing -I/usr/include/freebsd
+
+bin = grpar
+
+
+all: $(bin)
+
+$(bin): $(bin).o
+	$(CCLD) $(LDFLAGS) -o $@ $^ -lbsd
+
+%.o: %.c
+	$(CC) -c $(CFLAGS) $(CPPFLAGS) -o $@ $^
+
+clean:
+	rm -f $(bin) $(bin).o
+
