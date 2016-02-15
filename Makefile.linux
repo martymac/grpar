@@ -1,6 +1,5 @@
-CC     := gcc
-CCLD   := gcc
-CFLAGS += -O2 -Wall -fno-strict-aliasing -I/usr/include/freebsd
+CC   := gcc
+CCLD := gcc
 
 bin = grpar
 
@@ -8,10 +7,10 @@ bin = grpar
 all: $(bin)
 
 $(bin): $(bin).o
-	$(CCLD) $(LDFLAGS) -o $@ $^ -lbsd
+	$(CCLD) $(LDFLAGS) -o $@ $^
 
 %.o: %.c
-	$(CC) -c $(CFLAGS) $(CPPFLAGS) -o $@ $^
+	$(CC) -c -O2 -Wall -fno-strict-aliasing $(CFLAGS) $(CPPFLAGS) -o $@ $^
 
 clean:
 	rm -f $(bin) $(bin).o

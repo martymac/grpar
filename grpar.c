@@ -38,6 +38,9 @@
     [...]
 */
 
+/* uint32_t, uint8_t */
+#include <stdint.h>
+
 /* printf(3) */
 #include <stdio.h>
 
@@ -55,8 +58,15 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
-/* le32toh(9) */
-#include <sys/endian.h>
+#if defined(__FreeBSD__)
+  /* le32toh(9) */
+  #include <sys/endian.h>
+#elif defined(__linux__)
+  /* le32toh(3) */
+  #include <endian.h>
+#else
+  #define le32toh(x) (x)
+#endif
 
 /* stat(2) */
 #include <sys/stat.h>
