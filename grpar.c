@@ -38,313 +38,397 @@
     [...]
 */
 
-/* uint32_t, uint8_t */
+#define _CRT_SECURE_NO_WARNINGS
+
 #include <stdint.h>
-
-/* printf(3) */
+#include <stdbool.h>
 #include <stdio.h>
-
-/* malloc(3) */
 #include <stdlib.h>
-
-/* strncmp(3) */
 #include <string.h>
+#include <assert.h>
 
-/* open(2) */
-#include <fcntl.h>
-
-/* read(2), getopt(3) */
+/* getopt(3) */
 #include <sys/types.h>
-#include <sys/uio.h>
-#include <unistd.h>
 
 #if defined(__FreeBSD__)
-  /* le32toh(9) */
-  #include <sys/endian.h>
+/* le32toh(9) */
+#include <sys/endian.h>
 #elif defined(__linux__)
-  /* le32toh(3) */
-  #include <endian.h>
-#else
-  #define le32toh(x) (x)
+/* le32toh(3) */
+#include <endian.h>
 #endif
 
-/* stat(2) */
-#include <sys/stat.h>
+#ifdef _MSC_VER
 
-#define GRPAR_VERSION       "0.2"
+#include <winsock2.h>
 
-#define GRPHDR_MAGIC        "KenSilverman"  /* magic */
-#define GRPHDR_MAGICLEN     12              /* magic length */
-#define GRPHDR_NUMFILESLEN  4               /* bytes for number of files */
+#if BYTE_ORDER == LITTLE_ENDIAN
 
-#define GRPHDR_FILENAMELEN  12              /* bytes for file name */
-#define GRPHDR_FILESIZELEN  4               /* bytes for file size */
+#define htobe16(x) htons(x)
+#define htole16(x) (x)
+#define be16toh(x) ntohs(x)
+#define le16toh(x) (x)
 
-/* File entry within group archive */
-struct grp_file;
-struct grp_file {
-    uint32_t index;                         /* file position */
-    char file_name[GRPHDR_FILENAMELEN + 1]; /* file name + '\0' */
-    uint32_t file_size;                     /* file size in bytes */
-    off_t file_offset;                      /* file offset in group archive */
-    struct grp_file *next;                  /* next one */
-};
+#define htobe32(x) htonl(x)
+#define htole32(x) (x)
+#define be32toh(x) ntohl(x)
+#define le32toh(x) (x)
 
-/* Program options */
-struct program_options {
+#define htobe64(x) htonll(x)
+#define htole64(x) (x)
+#define be64toh(x) ntohll(x)
+#define le64toh(x) (x)
+
+#elif BYTE_ORDER == BIG_ENDIAN
+
+/* that would be xbox 360 */
+#define htobe16(x) (x)
+#define htole16(x) __builtin_bswap16(x)
+#define be16toh(x) (x)
+#define le16toh(x) __builtin_bswap16(x)
+
+#define htobe32(x) (x)
+#define htole32(x) __builtin_bswap32(x)
+#define be32toh(x) (x)
+#define le32toh(x) __builtin_bswap32(x)
+
+#define htobe64(x) (x)
+#define htole64(x) __builtin_bswap64(x)
+#define be64toh(x) (x)
+#define le64toh(x) __builtin_bswap64(x)
+
+#else
+
+#error byte order not supported
+
+#endif
+
+#define __BYTE_ORDER BYTE_ORDER
+#define __BIG_ENDIAN BIG_ENDIAN
+#define __LITTLE_ENDIAN LITTLE_ENDIAN
+#define __PDP_ENDIAN PDP_ENDIAN
+
+int opterr = 1, /* if error message should be printed */
+    optind = 1, /* index into parent argv vector */
+    optopt,     /* character checked for validity */
+    optreset;   /* reset getopt */
+char *optarg;   /* argument associated with option */
+
+#define BADCH ((int)'?')
+#define BADARG ((int)':')
+#define EMSG ("")
+
+/*
+* getopt -- Parse argc/argv argument vector.
+*/
+int getopt(int nargc, char *const nargv[], const char *ostr)
+{
+    static char *place = EMSG; /* option letter processing */
+    const char *oli;           /* option letter list index */
+
+    if (optreset || !*place)
+    {
+        /* update scanning pointer */
+        optreset = 0;
+        if (optind >= nargc || *(place = nargv[optind]) != '-')
+        {
+            place = EMSG;
+            return (-1);
+        }
+        if (place[1] && *++place == '-')
+        { /* found "--" */
+            ++optind;
+            place = EMSG;
+            return (-1);
+        }
+    }
+    /* option letter okay? */
+    if ((optopt = (int)*place++) == (int)':' ||
+        !(oli = strchr(ostr, optopt)))
+    {
+        /*
+        * if the user didn't specify '-' as an option,
+        * assume it means -1.
+        */
+        if (optopt == (int)'-')
+            return (-1);
+        if (!*place)
+            ++optind;
+        if (opterr && *ostr != ':')
+            (void)printf("illegal option -- %c\n", optopt);
+        return (BADCH);
+    }
+    if (*++oli != ':')
+    {
+        /* don't need argument */
+        optarg = NULL;
+        if (!*place)
+            ++optind;
+    }
+    else
+    {
+        /* need an argument */
+        if (*place) /* no white space */
+            optarg = place;
+        else if (nargc <= ++optind)
+        { /* no arg */
+            place = EMSG;
+            if (*ostr == ':')
+                return (BADARG);
+            if (opterr)
+                (void)printf("option requires an argument -- %c\n", optopt);
+            return (BADCH);
+        }
+        else /* white space */
+            optarg = nargv[optind];
+        place = EMSG;
+        ++optind;
+    }
+    return (optopt); /* dump back option letter */
+}
+#endif // WIN32
+
+#define GRPAR_VERSION "0.3"
+
+// header disk format
+typedef struct dgrp_hdr
+{
+    char magic[12]; // KenSilverman
+    uint32_t count;
+} dgrp_hdr;
+
+// file disk format
+typedef struct dgrp_file
+{
+    char name[12];
+    uint32_t size;
+} dgrp_file;
+
+// file memory format
+typedef struct grp_file
+{
+    char file_name[12 + 1]; // file name + '\0'
+    int64_t file_size;      // file size in bytes
+    int64_t file_offset;    // file offset in group archive
+} grp_file;
+
+typedef enum
+{
+    ACTION_NONE = 0,
+    ACTION_LIST,
+    ACTION_EXTRACT
+} action_t;
+
+typedef struct program_options
+{
     char *grp_filename;
     char *dst_dirname;
-#define ACTION_NONE     0
-#define ACTION_LIST     1
-#define ACTION_EXTRACT  2
-    uint8_t action;
-    uint8_t verbose;
-};
+    action_t action;
+    bool verbose;
+} program_options;
 
-/* Initialize grp_file structures from a grp file
-   Returns a file handle on group file as well as num_files found in archive */
-int
-init_grp_files(const char *filename, struct grp_file **head,
-    uint32_t *num_files)
+// Initialize grp_file structures from a grp file
+// Returns a file handle on group file as well as num_files found in archive
+FILE *init_grp_files(
+    const char *filename,
+    grp_file **head,
+    uint32_t *pFileCount)
 {
-    int grp_file_handle;
+    assert(filename);
+    assert(filename[0]);
+    assert(head);
+    assert(pFileCount);
 
-    /* Main header */
-    char headbuf[GRPHDR_MAGICLEN + GRPHDR_NUMFILESLEN];
+    *head = NULL;
+    *pFileCount = 0;
 
-    /* Per-file header */
-    char filebuf[GRPHDR_FILENAMELEN + GRPHDR_FILESIZELEN];
-    struct grp_file *current = NULL;
-    struct grp_file *previous = NULL;
-
-    if((filename == NULL) || (head == NULL) || (*head != NULL) ||
-        (num_files == NULL)) {
-        fprintf(stderr, "%s(): invalid argument\n", __func__);
-        return (-1);
-    }
-
-    /* Open group archive */
-    if((grp_file_handle = open(filename, O_RDONLY)) < 0) {
+    FILE *grp_file_handle = fopen(filename, "rb");
+    if (!grp_file_handle)
+    {
         fprintf(stderr, "cannot open group archive : %s\n", filename);
-        return (-1);
+        return NULL;
     }
 
-    /* Read main header */
-    if(read(grp_file_handle, &headbuf[0], GRPHDR_MAGICLEN + GRPHDR_NUMFILESLEN)
-        < (GRPHDR_MAGICLEN + GRPHDR_NUMFILESLEN)) {
+    dgrp_hdr hdr = {0};
+    if (fread(&hdr, 1, sizeof(hdr), grp_file_handle) != sizeof(hdr))
+    {
         fprintf(stderr, "group archive header truncated\n");
-        close(grp_file_handle);
-        return (-1);
+        fclose(grp_file_handle);
+        return NULL;
     }
 
-    /* Check file type */
-    if(strncmp(&headbuf[0], GRPHDR_MAGIC, GRPHDR_MAGICLEN) != 0) {
+    if (memcmp(hdr.magic, "KenSilverman", sizeof(hdr.magic)))
+    {
         fprintf(stderr, "unrecognized group archive : %s\n", filename);
-        close(grp_file_handle);
-        return (-1);
+        fclose(grp_file_handle);
+        return NULL;
     }
 
-    /* Get number of files */
-    (*num_files) = le32toh(*((uint32_t *)&headbuf[GRPHDR_MAGICLEN]));
+    uint32_t num_files = le32toh(hdr.count);
+    grp_file *files = calloc(num_files, sizeof(*files));
 
-    uint32_t i = 0;
-    while(i < (*num_files)) {
-        /* Backup current structure pointer and initialize a new structure */
-        previous = current;
-        if((current = malloc(sizeof(struct grp_file))) == NULL) {
-            fprintf(stderr, "cannot allocate memory\n");
-            close(grp_file_handle);
-            return (-1);
-        }
-
-        /* Set head on first pass */
-        if(*head == NULL)
-            *head = current;
-
-        /* Read group archive's next 16 bytes */
-        if(read(grp_file_handle, &filebuf[0],
-            GRPHDR_FILENAMELEN + GRPHDR_FILESIZELEN)
-            < (GRPHDR_FILENAMELEN + GRPHDR_FILESIZELEN)) {
+    size_t offset = sizeof(dgrp_hdr) + num_files * sizeof(dgrp_file);
+    for (uint32_t i = 0; i < num_files; ++i)
+    {
+        dgrp_file dfile = {0};
+        if (fread(&dfile, 1, sizeof(dfile), grp_file_handle) != sizeof(dfile))
+        {
             fprintf(stderr, "group archive header truncated\n");
-            close(grp_file_handle);
-            return (-1);
+            free(files);
+            fclose(grp_file_handle);
+            return NULL;
         }
+        dfile.size = le32toh(dfile.size);
 
-        /* Update current structure */
-        current->index = i + 1;
-        strncpy(&current->file_name[0], &filebuf[0], GRPHDR_FILENAMELEN);
-        current->file_name[GRPHDR_FILENAMELEN] = '\0';
-        current->file_size =
-            le32toh(*((uint32_t *)&filebuf[GRPHDR_FILENAMELEN]));
-        current->file_offset =
-            (previous == NULL) ?
-            /* first file */
-            (GRPHDR_MAGICLEN + GRPHDR_NUMFILESLEN +
-            ((GRPHDR_FILENAMELEN + GRPHDR_FILESIZELEN) * (*num_files))) :
-            /* next ones */
-            (previous->file_offset + previous->file_size);
-        current->next = NULL; /* will be set in next pass */
+        memcpy(files[i].file_name, dfile.name, sizeof(dfile.name));
+        files[i].file_size = dfile.size;
+        files[i].file_offset = offset;
 
-        /* Set previous' next pointer */
-        if(previous != NULL)
-            previous->next = current;
-
-        i++;
+        offset += dfile.size;
     }
-    return (grp_file_handle);
+
+    *head = files;
+    *pFileCount = num_files;
+    return grp_file_handle;
 }
 
 /* Un-initialize grp_file structures */
-void
-uninit_grp_files(int grp_file_handle, struct grp_file *head)
+void uninit_grp_files(FILE *grp_file_handle, grp_file *files)
 {
-    struct grp_file *current = head;
-    struct grp_file *next;
-
-    while(current != NULL) {
-        next = current->next;
-        free(current);
-        current = next;
+    if (grp_file_handle)
+    {
+        fclose(grp_file_handle);
     }
-
-    close(grp_file_handle);
-    return;
+    if (files)
+    {
+        free(files);
+    }
 }
 
 /* Dump grp_file structures */
-void
-dump_grp_files(struct grp_file *head, uint8_t verbose)
+void dump_grp_files(grp_file *files, uint32_t fileCount, bool verbose)
 {
-    struct grp_file *current = head;
-
-    while(current != NULL) {
-        if(verbose == 1)
-            fprintf(stdout, "%s (%d bytes, offset %d (0x%x))\n",
-                current->file_name, current->file_size,
-                (int)current->file_offset,
-                (int)current->file_offset);
-        else
-            fprintf(stdout, "%s\n", current->file_name);
-        current = current->next;
+    if (verbose)
+    {
+        for (uint32_t i = 0; i < fileCount; ++i)
+        {
+            fprintf(stdout,
+                    "%s (%d bytes, offset %d (0x%x))\n",
+                    files[i].file_name,
+                    (int)files[i].file_size,
+                    (int)files[i].file_offset,
+                    (int)files[i].file_offset);
+        }
     }
-    return;
+    else
+    {
+        for (uint32_t i = 0; i < fileCount; ++i)
+        {
+            fprintf(stdout, "%s\n", files[i].file_name);
+        }
+    }
 }
 
 /* Extract a single file from group archive */
-int
-extract_single_file(int grp_file_handle, const char *lookup_filename,
-    const char *dest_filename, struct grp_file *head, uint8_t verbose)
+int extract_single_file(
+    FILE *grp_file_handle,
+    const char *lookup_filename,
+    const char *dest_filename,
+    grp_file *files,
+    uint32_t fileCount,
+    bool verbose)
 {
-    struct grp_file *current = head;
-    int dest_file_handle;
-#define RBUF_SIZE   512
-    char rbuf[RBUF_SIZE]; /* our read buffer */
+    assert(grp_file_handle);
+    assert(lookup_filename);
+    assert(dest_filename);
 
-    if((lookup_filename == NULL) || (dest_filename == NULL)) {
-        fprintf(stderr, "%s(): invalid argument\n", __func__);
-        return (-1);
-    }
-
-    while(current != NULL) {
-        /* If requested file found */
-        if(strncmp(lookup_filename, current->file_name, GRPHDR_FILENAMELEN)
-            == 0) {
-            if(verbose == 1)
-                fprintf(stdout, "%s\n", lookup_filename);
-
-            /* Open output file */
-            if((dest_file_handle =
-                open(dest_filename, O_WRONLY|O_CREAT|O_TRUNC, 0660)) < 0) {
-                fprintf(stderr, "cannot create destination file : %s\n",
-                    dest_filename);
-                return (-1);
-            }
-
-            /* Seek to file position and copy data */
-            lseek(grp_file_handle, current->file_offset, SEEK_SET);
-
-            /* And copy file to destination */
-            uint32_t remaining_bytes = current->file_size;
-            int bytes_read;
-            while((bytes_read =
-                read(grp_file_handle, &rbuf[0], (remaining_bytes > RBUF_SIZE) ?
-                RBUF_SIZE : remaining_bytes)) > 0) {
-                if(write(dest_file_handle, &rbuf[0], bytes_read) < bytes_read) {
-                    fprintf(stderr, "incomplete write to destination file : "
-                        "%s\n", dest_filename);
-                    close(dest_file_handle);
-                    return (-1);
-                }
-                remaining_bytes -= bytes_read;
-            }
-
-            /* Has whole file been copied ? */
-            if(remaining_bytes > 0) {
-                fprintf(stderr, "file partially extracted : %s\n",
-                    lookup_filename);
-                close(dest_file_handle);
-                return (-1);
-            }
-
-            close(dest_file_handle);
-            return (0);
+    for (uint32_t i = 0; i < fileCount; ++i)
+    {
+        if (strncmp(lookup_filename, files[i].file_name, sizeof(files[i].file_name)) != 0)
+        {
+            continue;
         }
-        current = current->next;
+
+        FILE *dest_file_handle = fopen(dest_filename, "wb");
+        if (!dest_file_handle)
+        {
+            fprintf(stderr, "cannot create destination file : %s\n", dest_filename);
+            return (-1);
+        }
+
+        /* Seek to file position and copy data */
+        fseek(grp_file_handle, files[i].file_offset, SEEK_SET);
+
+        /* And copy file to destination */
+        size_t remaining_bytes = files[i].file_size;
+        size_t bytes_read = 0;
+        size_t bytes_wrote = 0;
+        size_t chunkSize = 0;
+        char rbuf[1024] = {0};
+
+        while (remaining_bytes)
+        {
+            chunkSize = (remaining_bytes > sizeof(rbuf)) ? sizeof(rbuf) : remaining_bytes;
+            bytes_read = fread(rbuf, 1, chunkSize, grp_file_handle);
+            if (bytes_read != chunkSize)
+            {
+                fprintf(stderr, "incomplete read from source file : %s\n", files[i].file_name);
+                fclose(dest_file_handle);
+                return (-1);
+            }
+            bytes_wrote = fwrite(rbuf, 1, chunkSize, dest_file_handle);
+            if (bytes_wrote != chunkSize)
+            {
+                fprintf(stderr, "incomplete write to destination file : %s\n", dest_filename);
+                fclose(dest_file_handle);
+                return (-1);
+            }
+            remaining_bytes -= bytes_read;
+        }
+
+        fclose(dest_file_handle);
+        return (0);
     }
+
     fprintf(stderr, "%s : not found in group archive\n", lookup_filename);
     return (-1);
 }
 
 /* Extract all files from group archive */
-int
-extract_all_files(int grp_file_handle, const char *base_path,
-    struct grp_file *head, uint8_t verbose)
+int extract_all_files(
+    FILE *grp_file_handle,
+    const char *base_path,
+    grp_file *files,
+    uint32_t fileCount,
+    bool verbose)
 {
-    struct grp_file *current = head;
-    char *dest_path;
     int err = 0;
 
-    if(base_path == NULL) {
-        fprintf(stderr, "%s(): invalid argument\n", __func__);
-        return (-1);
-    }
+    assert(grp_file_handle);
+    assert(base_path);
+    assert(base_path[0]);
 
-    while(current != NULL) {
-        dest_path = (char *)malloc(strlen(base_path) + 1 +
-            strlen(current->file_name) + 1); /* includes '/' and final '\0' */
-        if(dest_path == NULL) {
-            fprintf(stderr, "cannot allocate memory\n");
-            return (-1);
-        }
-        dest_path[0] = '\0';
+    for (uint32_t i = 0; i < fileCount; ++i)
+    {
+        char dest_path[260] = {0};
         strcat(dest_path, base_path);
         strcat(dest_path, "/");
-        strcat(dest_path, current->file_name);
-
-        err |= extract_single_file(grp_file_handle,
-            current->file_name, dest_path, head, verbose);
-
-        free(dest_path);
-        current = current->next;
+        strcat(dest_path, files[i].file_name);
+        err |= extract_single_file(grp_file_handle, files[i].file_name, dest_path, files, fileCount, verbose);
     }
-    return (err);
+
+    return err;
 }
 
-/* Print grpar version */
-void
-version(void)
+void version(void)
 {
-    fprintf(stderr, "grpar, v." GRPAR_VERSION 
-        ", (c) 2010 - Ganael LAPLANCHE, http://contribs.martymac.org\n");
+    fprintf(stderr, "grpar, v." GRPAR_VERSION ", (c) 2010 - Ganael LAPLANCHE, http://contribs.martymac.org\n");
 }
 
-/* Print grpar usage */
-void
-usage(void)
+void usage(void)
 {
     version();
-    fprintf(stderr, "usage: grpar [-h] [-V] [-t|-x] [-C path] [-v] "
-        "-f grp_file [file_1] [file_2] [...]\n");
+    fprintf(stderr, "usage: grpar [-h] [-V] [-t|-x] [-C path] [-v] -f grp_file [file_1] [file_2] [...]\n");
     fprintf(stderr, "-h : this help\n");
     fprintf(stderr, "-V : version\n");
     fprintf(stderr, "-t : list files from group archive\n");
@@ -355,209 +439,131 @@ usage(void)
     return;
 }
 
-/* Initialize global options structure */
-void
-init_options(struct program_options *options)
+int main(int argc, char **argv)
 {
-    /* Set default options */
-    options->grp_filename = NULL;
-    options->dst_dirname = NULL;
-    options->action = ACTION_NONE;
-    options->verbose = 0;
-}
-
-/* Un-initialize global options structure */
-void
-uninit_options(struct program_options *options)
-{
-    if(options->grp_filename != NULL)
-        free(options->grp_filename);
-    if(options->dst_dirname != NULL)
-        free(options->dst_dirname);
-    options->action = ACTION_NONE;
-    options->verbose = 0;
-}
-
-int
-main(int argc, char **argv)
-{
-    int ch;
-
-    struct grp_file *head = NULL;
-    uint32_t num_files = 0;
-    int grp_file_handle;
-
-    /* Program options */
-    struct program_options options;
-
-    /* Set default options */
-    init_options(&options);
-
-    if(argc <= 1) {
-         usage();
-         uninit_options(&options);
-         return (1);
+    program_options options = {0};
+    if (argc <= 1)
+    {
+        usage();
+        return (1);
     }
 
-    /* Options handling */
-    while ((ch = getopt(argc, argv, "?hVtxC:vf:")) != -1) {
-        switch(ch) {
-            case '?':
-            case 'h':
-                usage();
-                uninit_options(&options);
-                return (0);
-                break;
-            case 'V':
-                version();
-                uninit_options(&options);
-                return (0);
-                break;
-            case 't':
-                if(options.action != ACTION_NONE) {
-                    fprintf(stderr, "please specify either -t or -x option, "
-                        "not both\n");
-                    uninit_options(&options);
-                    return (1);
-                }
-                options.action = ACTION_LIST;
-                break;
-            case 'x':
-                if(options.action != ACTION_NONE) {
-                    fprintf(stderr, "please specify either -t or -x option, "
-                        "not both\n");
-                    uninit_options(&options);
-                    return (1);
-                }
-                options.action = ACTION_EXTRACT;
-                break;
-            case 'C':
-                options.dst_dirname = malloc(strlen(optarg) + 1);
-                if(options.dst_dirname == NULL) {
-                    fprintf(stderr, "cannot allocate memory\n");
-                    uninit_options(&options);
-                    return (1);
-                }
-                strcpy(options.dst_dirname, optarg); 
-                break;
-            case 'v':
-                options.verbose = 1;
-                break;
-            case 'f':
-                options.grp_filename = malloc(strlen(optarg) + 1);
-                if(options.grp_filename == NULL) {
-                    fprintf(stderr, "cannot allocate memory\n");
-                    uninit_options(&options);
-                    return (1);
-                }
-                strcpy(options.grp_filename, optarg); 
-                break;
+    int ch = 0;
+    while ((ch = getopt(argc, argv, "?hVtxC:vf:")) != -1)
+    {
+        switch (ch)
+        {
+        default:
+        case '?':
+        case 'h':
+            usage();
+            return (0);
+            break;
+        case 'V':
+            version();
+            return (0);
+            break;
+        case 't':
+            if (options.action != ACTION_NONE)
+            {
+                fprintf(stderr, "please specify either -t or -x option, not both\n");
+                return (1);
+            }
+            options.action = ACTION_LIST;
+            break;
+        case 'x':
+            if (options.action != ACTION_NONE)
+            {
+                fprintf(stderr, "please specify either -t or -x option, not both\n");
+                return (1);
+            }
+            options.action = ACTION_EXTRACT;
+            break;
+        case 'C':
+            options.dst_dirname = _strdup(optarg);
+            break;
+        case 'v':
+            options.verbose = 1;
+            break;
+        case 'f':
+            options.grp_filename = _strdup(optarg);
+            break;
         }
     }
     argc -= optind;
     argv += optind;
 
-    if(options.action == ACTION_NONE) {
-        fprintf(stderr, "please specify either -t or -x option\n");
-        uninit_options(&options);
-        return (1);
-    }
-
-    if(options.grp_filename == NULL) {
+    if (!options.grp_filename)
+    {
         fprintf(stderr, "please specify a group archive\n");
-        uninit_options(&options);
         return (1);
     }
 
-    /* Load grp file TOC into memory */
-    if((grp_file_handle = init_grp_files(options.grp_filename, &head,
-        &num_files)) < 0) {
+    if (!options.dst_dirname)
+    {
+        options.dst_dirname = _strdup(".");
+    }
+
+    size_t dirlen = strlen(options.dst_dirname);
+    while (dirlen && (options.dst_dirname[dirlen - 1] == '/'))
+    {
+        options.dst_dirname[dirlen - 1] = 0;
+        dirlen = strlen(options.dst_dirname);
+    }
+
+    grp_file *files = NULL;
+    uint32_t fileCount = 0;
+    FILE *grp_file_handle = init_grp_files(options.grp_filename, &files, &fileCount);
+    if (!grp_file_handle)
+    {
         fprintf(stderr, "error reading group archive TOC\n");
-        uninit_grp_files(grp_file_handle, head);
-        uninit_options(&options);
+        uninit_grp_files(grp_file_handle, files);
         return (1);
     }
 
-    /* Let's go */
-    if(options.action == ACTION_LIST) {
-        dump_grp_files(head, options.verbose);
-        if(options.verbose == 1)
-            fprintf(stdout, "%d files found\n", num_files);
+    switch (options.action)
+    {
+    default:
+        fprintf(stderr, "please specify either -t or -x option\n");
+        break;
+    case ACTION_LIST:
+    {
+        dump_grp_files(files, fileCount, options.verbose);
+        if (options.verbose)
+            fprintf(stdout, "%d files found\n", fileCount);
     }
-    else if(options.action == ACTION_EXTRACT) {
-        struct stat dst_dirname_stat;
-
-        /* Set default destination directory */
-        if(options.dst_dirname == NULL) {
-            options.dst_dirname = malloc(strlen(".") + 1);
-            if(options.dst_dirname == NULL) {
-                fprintf(stderr, "cannot allocate memory\n");
-                uninit_grp_files(grp_file_handle, head);
-                uninit_options(&options);
-                return (1);
-            }
-            strcpy(options.dst_dirname, "."); 
-        }
-
-        /* Cleanup destination directory */
-        while((strlen(options.dst_dirname) > 0) && 
-            (options.dst_dirname[strlen(options.dst_dirname) - 1] == '/')) {
-            options.dst_dirname[strlen(options.dst_dirname) - 1] = '\0';
-        }
-
-        /* Validate destination directory */
-        if((stat(options.dst_dirname, &dst_dirname_stat) < 0) ||
-            (!S_ISDIR(dst_dirname_stat.st_mode))) {
-            fprintf(stderr, "invalid destination directory specified : %s\n",
-                options.dst_dirname);
-            uninit_grp_files(grp_file_handle, head);
-            uninit_options(&options);
-            return (1);
-        }
-
-        if(argc <= 0) {
+    break;
+    case ACTION_EXTRACT:
+    {
+        if (argc <= 0)
+        {
             /* No file specified, extract everything */
-            if(extract_all_files(grp_file_handle, options.dst_dirname, head,
-                options.verbose) < 0) {
+            if (extract_all_files(grp_file_handle, options.dst_dirname, files, fileCount, options.verbose) < 0)
+            {
                 fprintf(stderr, "files extracted, with error(s)\n");
             }
-            else {
-                if(options.verbose == 1)
-                    fprintf(stdout, "%d files extracted\n", num_files);
+            else
+            {
+                if (options.verbose)
+                    fprintf(stdout, "%d files extracted\n", fileCount);
             }
         }
-        else {
-            int i;
-            char *dest_path = NULL;
+        else
+        {
             /* Extract specified file(s) */
-            for(i = 0 ; i < argc ; i++) {
-                dest_path = (char *)malloc(strlen(options.dst_dirname) + 1 +
-                    strlen(argv[i]) + 1); /* includes '/' and final '\0' */
-                if(dest_path == NULL) {
-                    fprintf(stderr, "cannot allocate memory\n");
-                    uninit_grp_files(grp_file_handle, head);
-                    uninit_options(&options);
-                    return (1);
-                }
-                dest_path[0] = '\0';
+            for (int i = 0; i < argc; i++)
+            {
+                char dest_path[260] = {0};
                 strcat(dest_path, options.dst_dirname);
                 strcat(dest_path, "/");
                 strcat(dest_path, argv[i]);
-                extract_single_file(grp_file_handle, argv[i], dest_path, head,
-                    options.verbose);
-                free(dest_path);
+                extract_single_file(grp_file_handle, argv[i], dest_path, files, fileCount, options.verbose);
             }
         }
     }
-    else {
-        /* NOTREACHED */
-        fprintf(stderr, "congratulations, you have reached an unreachable part "
-            "of the code\n");
-        uninit_grp_files(grp_file_handle, head);
-        uninit_options(&options);
-        return (1);
+    break;
     }
-    uninit_grp_files(grp_file_handle, head);
-    uninit_options(&options);
+
+    uninit_grp_files(grp_file_handle, files);
     return (0);
 }
