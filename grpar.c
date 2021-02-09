@@ -55,8 +55,12 @@
 
 /* read(2), getopt(3) */
 #include <sys/types.h>
-#include <sys/uio.h>
-#include <unistd.h>
+#if defined(_WIN32)
+  #include <getopt.h>
+#else
+  #include <sys/uio.h>
+  #include <unistd.h>
+#endif
 
 #if defined(__FreeBSD__)
   /* le32toh(9) */
@@ -70,6 +74,14 @@
 
 /* stat(2) */
 #include <sys/stat.h>
+
+/* Windows-Unix compat */
+#if !defined(O_BINARY)
+  #define O_BINARY 0
+#endif
+#if !defined(S_ISDIR)
+  #define S_ISDIR(mode)  (((mode) & S_IFMT) == S_IFDIR)
+#endif
 
 #define GRPAR_VERSION       "0.2"
 
@@ -124,7 +136,7 @@ init_grp_files(const char *filename, struct grp_file **head,
     }
 
     /* Open group archive */
-    if((grp_file_handle = open(filename, O_RDONLY)) < 0) {
+    if((grp_file_handle = open(filename, O_RDONLY|O_BINARY)) < 0) {
         fprintf(stderr, "cannot open group archive : %s\n", filename);
         return (-1);
     }
@@ -254,7 +266,7 @@ extract_single_file(int grp_file_handle, const char *lookup_filename,
 
             /* Open output file */
             if((dest_file_handle =
-                open(dest_filename, O_WRONLY|O_CREAT|O_TRUNC, 0660)) < 0) {
+                open(dest_filename, O_WRONLY|O_CREAT|O_TRUNC|O_BINARY, 0660)) < 0) {
                 fprintf(stderr, "cannot create destination file : %s\n",
                     dest_filename);
                 return (-1);

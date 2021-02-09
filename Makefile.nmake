@@ -1,0 +1,15 @@
+cflags = /nologo /O2 /c /I.
+lflags = /nologo
+
+
+all: grpar.exe
+
+clean:
+	del grpar.exe grpar.obj getopt.obj
+
+.c.obj:
+  cl $(cflags) $*.c
+
+grpar.exe: grpar.obj getopt.obj
+  link $(lflags) /out:grpar.exe $**
+
