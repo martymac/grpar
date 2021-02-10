@@ -15,3 +15,13 @@ Grpar has been written by Ganaël LAPLANCHE <ganael.laplanche@martymac.org>
 and is available under the BSD license (see COPYING for details).
 
 The latest version is available on http://contribs.martymac.org
+
+Contributions :
+***************
+
+Getopt code comes from mingw-w64 project :
+
+    mingw-w64-crt/misc/getopt.c    -> getopt.c
+    mingw-w64-headers/crt/getopt.h -> getopt.h
+
+See each file's header for license details.
